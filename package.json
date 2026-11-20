@@ -1,0 +1,13 @@
+{
+  "name": "roofshield-pro-workspace",
+  "private": true,
+  "scripts": {
+    "postinstall": "npm --prefix whop-vite install --no-audit --no-fund",
+    "dev": "test -x whop-vite/node_modules/.bin/vite || npm --prefix whop-vite install --no-audit --no-fund; npm --prefix whop-vite run dev",
+    "build": "npm --prefix whop-vite run build",
+    "start": "npm --prefix whop-vite run preview",
+    "lint": "npm --prefix whop-vite run lint",
+    "typecheck": "npm --prefix whop-vite run typecheck",
+    "deploy": "npm --prefix whop-vite run deploy"
+  }
+}
