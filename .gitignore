@@ -3,3 +3,7 @@
 .env
 node_modules
 .next
+dist/
+.wrangler/
+.output/
+.dev.vars
