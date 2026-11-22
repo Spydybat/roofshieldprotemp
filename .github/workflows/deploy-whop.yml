@@ -1,0 +1,100 @@
+name: Deploy RoofShield Pro to Whop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-whop:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: whop-vite
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify linked Whop app ID (app_S6fj7hfqepepH7)
+        run: |
+          node -e '
+            const fs = require("fs");
+            const cfg = JSON.parse(fs.readFileSync("whop.app.json", "utf8"));
+            if (cfg.app_id !== "app_S6fj7hfqepepH7") {
+              console.error("Unexpected app_id in whop.app.json:", cfg.app_id);
+              process.exit(1);
+            }
+            console.log("Verified linked app:", cfg.app_id, "-", cfg.name);
+          '
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: whop-vite/package-lock.json
+
+      - name: Install whop-vite dependencies
+        run: npm ci
+
+      - name: Preflight permission check (app_S6fj7hfqepepH7)
+        env:
+          WHOP_API_KEY: ${{ secrets.WHOP_DEPLOY_API_KEY }}
+        run: |
+          if [ -z "$WHOP_API_KEY" ]; then
+            echo "ERROR: WHOP_DEPLOY_API_KEY secret is not configured in GitHub Actions Secrets."
+            exit 1
+          fi
+          npx whop permissions check \
+            --resource_id app_S6fj7hfqepepH7 \
+            --actions developer:manage_builds,developer:update_app,domain:read \
+            --format json | node -e '
+            const fs = require("fs");
+            const parsed = JSON.parse(fs.readFileSync(0, "utf8"));
+            const items = Array.isArray(parsed.data) ? parsed.data : [];
+            const required = ["developer:manage_builds", "developer:update_app", "domain:read"];
+            const map = Object.fromEntries(items.map((i) => [i.action, Boolean(i.granted)]));
+            console.log("Permission check:", JSON.stringify(map, null, 2));
+            const missing = required.filter((a) => map[a] !== true);
+            if (missing.length > 0) {
+              console.error("Missing required permissions:", missing.join(", "));
+              process.exit(1);
+            }
+          '
+
+      - name: Configure roofshield-pro.whop.site route and paths (filtered output)
+        env:
+          WHOP_API_KEY: ${{ secrets.WHOP_DEPLOY_API_KEY }}
+        run: |
+          npx whop apps update app_S6fj7hfqepepH7 \
+            --route roofshield-pro \
+            --base_url https://roofshield-pro.whop.site \
+            --experience_path "/experiences/[experienceId]" \
+            --discover_path "/discover" \
+            --format json | node -e '
+            const fs = require("fs");
+            const d = JSON.parse(fs.readFileSync(0, "utf8"));
+            console.log(JSON.stringify({
+              id: d.id,
+              name: d.name,
+              route: d.route,
+              base_url: d.base_url,
+              hosted_url: d.hosted_url,
+              experience_path: d.experience_path,
+              discover_path: d.discover_path
+            }, null, 2));
+          '
+
+      - name: Build, upload, and promote web build to app_S6fj7hfqepepH7
+        env:
+          WHOP_API_KEY: ${{ secrets.WHOP_DEPLOY_API_KEY }}
+        run: npx whop apps deploy --format json
+
+      - name: Verify live URL responds HTTP 200
+        run: |
+          sleep 5
+          STATUS=$(curl -sS -o /dev/null -w "%{http_code}" https://roofshield-pro.whop.site)
+          echo "https://roofshield-pro.whop.site -> HTTP $STATUS"
+          test "$STATUS" -eq 200
